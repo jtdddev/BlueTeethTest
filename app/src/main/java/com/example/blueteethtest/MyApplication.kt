@@ -1,8 +1,10 @@
 package com.example.blueteethtest
 
 import android.app.Application
+import java.util.UUID
 
 class MyApplication : Application() {
+
     init {
         instance = this
     }
