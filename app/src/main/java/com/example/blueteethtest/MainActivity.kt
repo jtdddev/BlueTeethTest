@@ -2,10 +2,7 @@ package com.example.blueteethtest
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothManager
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -32,29 +29,52 @@ fun toast(s: String) {
 
 
 class MainActivity : AppCompatActivity() {
-    private val REQUEST_ENABLE_BT: Int = 1
-    lateinit var perms: Array<String>
+    lateinit var perms: Array<String> //权限
+    var isGranted = false
     lateinit var open: TextView
     lateinit var search: TextView
-    lateinit var close: TextView
     lateinit var et_message: EditText
     lateinit var tv_message: TextView
     lateinit var send: TextView
-    var mChatService: BluetoothChatService? = null
+    var mManager: MyBluetoothManager? = null
     var mService: MyBluetoothService? = null
     var mConnectDevice: BluetoothDevice? = null
-
-    val btAdapter by lazy {
-        val btManager =
-            this@MainActivity.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        btManager.adapter
-    }
+    var mConnectDeviceName: String = ""
 
     var mHandler: Handler = Handler(Looper.getMainLooper()) {
         when (it.what) {
+            Constants.MESSAGE_STATE_CHANGE -> {
+                var s: String = ""
+                when (it.arg1) {
+                    STATE_CONNECTING -> s = "正在尝试连接"
+                    STATE_CONNECTED -> s = "已连接${mConnectDeviceName}"
+                    STATE_LISTEN -> s = "未连接"
+                    STATE_NONE -> s = "未连接"
+                }
+                toast(s)
+                true
+            }
+
+            Constants.MESSAGE_WRITE -> {
+                val buffer = (it.obj) as ByteArray
+                toast("发送了消息:${String(buffer)}")
+                true
+            }
+
             Constants.MESSAGE_READ -> {
-                var buffer = (it.obj) as ByteArray
+                val buffer = (it.obj) as ByteArray
                 tv_message.setText(String(buffer, 0, it.arg1))
+                true
+            }
+
+            Constants.MESSAGE_DEVICE_NAME -> {
+                mConnectDeviceName = it.data.getString(Constants.DEVICE_NAME) + ""
+                toast("正在连接 ${it.data.getString(Constants.DEVICE_NAME)}")
+                true
+            }
+
+            Constants.MESSAGE_TOAST -> {
+                toast("${it.data.getString(Constants.TOAST)}")
                 true
             }
 
@@ -69,7 +89,6 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         open = findViewById(R.id.tv_open)
         search = findViewById(R.id.tv_search)
-        close = findViewById(R.id.tv_close)
         et_message = findViewById(R.id.et_message)
         tv_message = findViewById(R.id.tv_get_message)
         send = findViewById(R.id.tv_send)
@@ -82,23 +101,17 @@ class MainActivity : AppCompatActivity() {
         open.setOnClickListener(object : View.OnClickListener {
             @SuppressLint("MissingPermission")
             override fun onClick(p0: View?) {
-                toast("打开蓝牙 权限:${XXPermissions.isGranted(this@MainActivity, perms)}")
-                if (XXPermissions.isGranted(
-                        this@MainActivity,
-                        perms
-                    ) && btAdapter?.isEnabled == false
-                ) {
-                    val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
-                    startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT)
-                }
+                initPermission()
             }
 
         })
 
         search.setOnClickListener(object : View.OnClickListener {
             override fun onClick(p0: View?) {
-                // TODO: 搜索
-                toast("搜索蓝牙 权限:${XXPermissions.isGranted(this@MainActivity, perms)}")
+                if (!isGranted) {
+                    toast("请先打开蓝牙权限")
+                    return
+                }
                 startActivityForResult(
                     Intent(this@MainActivity, FindBluetoothActivity::class.java),
                     10001
@@ -107,22 +120,10 @@ class MainActivity : AppCompatActivity() {
 
         })
 
-        close.setOnClickListener(object : View.OnClickListener {
-            override fun onClick(p0: View?) {
-                // TODO: 关闭蓝牙
-                toast("关闭蓝牙 权限:${XXPermissions.isGranted(this@MainActivity, perms)}")
-            }
-
-        })
-
-
         send.setOnClickListener(object : View.OnClickListener {
             override fun onClick(p0: View?) {
                 if (!TextUtils.isEmpty(et_message.text)) {
-                    // TODO: 发送到客户端试一下
-                    val string = et_message.text.toString()
-//                    mChatService?.write(string.toByteArray())
-                    mService?.write(string.toByteArray())
+                    mService?.write(et_message.text.toString())
                     et_message.setText("")
                 }
             }
@@ -131,9 +132,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun initPermission() {
-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S) {
+        perms = if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S) {
             //Android 12  需要动态申请的蓝牙权限
-            perms = arrayOf(
+            arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_ADVERTISE,
                 Manifest.permission.BLUETOOTH_CONNECT,
@@ -141,29 +142,38 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.ACCESS_FINE_LOCATION
             )
         } else {
-            perms = arrayOf(
-                Manifest.permission.ACCESS_COARSE_LOCATION,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
+            arrayOf(
+                Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
         }
-        XXPermissions.with(this)
-            .permission(perms)
+        XXPermissions.with(this@MainActivity).permission(perms)
             .request(object : OnPermissionCallback {
                 override fun onGranted(permissions: MutableList<String>?, all: Boolean) {
+                    isGranted = all
                     if (!all) {
-                        toast("获取部分权限成功，但部分权限未正常授予")
+                        Toast.makeText(
+                            this@MainActivity,
+                            "获取部分权限成功，但部分权限未正常授予",
+                            Toast.LENGTH_SHORT
+                        ).show()
                         return
                     }
-                    toast("获取权限成功")
+                    Toast.makeText(
+                        this@MainActivity, "获取权限成功", Toast.LENGTH_SHORT
+                    ).show()
                 }
 
                 override fun onDenied(permissions: MutableList<String>?, never: Boolean) {
+                    isGranted = false
                     if (never) {
-                        toast("被永久拒绝授权，请手动授予权限")
+                        Toast.makeText(
+                            this@MainActivity, "被永久拒绝授权，请手动授予权限", Toast.LENGTH_SHORT
+                        ).show()
                         // 如果是被永久拒绝就跳转到应用权限系统设置页面
                         XXPermissions.startPermissionActivity(this@MainActivity, permissions)
                     } else {
-                        toast("获取权限失败")
+                        Toast.makeText(
+                            this@MainActivity, "获取权限失败", Toast.LENGTH_SHORT
+                        ).show()
                     }
 
                 }
@@ -172,23 +182,17 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        // TODO:
-//        mChatService = BluetoothChatService(this@MainActivity, mHandler)
         if (mService == null) {
-            mService = MyBluetoothService(mHandler)
+            mService = MyBluetoothService(this@MainActivity, mHandler)
+        }
+        if (mManager == null) {
+            mManager = MyBluetoothManager(this@MainActivity)
         }
     }
 
     override fun onResume() {
         super.onResume()
-        // TODO:
-//        if (mChatService != null) {
-//            if (mChatService?.state == STATE_NONE) {
-//                mChatService?.start()
-//            }
-//        }
-
-        if (mService != null) {
+        if (mService != null && isGranted) {
             if (mService?.mState == STATE_NONE) {
                 mService?.start()
             }
@@ -208,13 +212,9 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
-            REQUEST_ENABLE_BT -> toast("我他妈打开蓝牙")
             10001 -> {
-                if (resultCode == RESULT_OK) {
-                    // TODO:
-//                    mChatService?.connect(mConnectDevice, true)
-                    mService?.connect(mConnectDevice)
-                }
+                if (resultCode == RESULT_OK)
+                    mService?.connect(mConnectDevice!!)
             }
         }
     }

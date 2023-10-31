@@ -1,7 +1,6 @@
 package com.example.blueteethtest
 
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothDevice.BOND_BONDED
 import android.bluetooth.BluetoothManager
@@ -10,58 +9,61 @@ import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.greenrobot.eventbus.EventBus
 
 class FindBluetoothActivity : AppCompatActivity(),
     BluetoothDeviceAdapter.OnDeviceItemClickListener {
-    lateinit var adapter: BluetoothDeviceAdapter
+    var adapter: BluetoothDeviceAdapter? = null
     val btAdapter by lazy {
         val btManager =
             this@FindBluetoothActivity.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         btManager.adapter
     }
-    val manager: MyBluetoothManager = MyBluetoothManager()
+    var mManager: MyBluetoothManager? = null
+    lateinit var rvDevice:RecyclerView
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_find_bluetooth)
-        setDiscoverable()
-        adapter = manager.bluetoothDeviceAdapter
-        var rvDevice = findViewById<RecyclerView>(R.id.rv_device)
-        rvDevice.adapter = manager.bluetoothDeviceAdapter
-        manager.bluetoothDeviceAdapter.onItemClickListener = this
+        rvDevice = findViewById<RecyclerView>(R.id.rv_device)
         rvDevice.layoutManager =
             object : LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false) {}
-        manager.mBluetoothDeviceSearchLiveData.observe(this, object : Observer<Resource<String>> {
-            override fun onChanged(value: Resource<String>) {
-                when (value.loadingStatus) {
-                    Resource.LOADING ->
-                        adapter.notifyDataSetChanged()
-
-                    Resource.SUCCESS -> toast("玛德扫描完了")
-                }
-            }
-
-        })
-        manager.setAdapter(btAdapter)
-        manager.startSearch(this@FindBluetoothActivity)
+        mManager = MyBluetoothManager(this@FindBluetoothActivity)
+        adapter = mManager?.deviceAdapter
+        adapter?.onItemClickListener = this
+        mManager?.setDiscoverable()
+        rvDevice.adapter = adapter
+        initObserver()
+        mManager?.startSearch(this@FindBluetoothActivity)
     }
 
-    fun setDiscoverable() {
-        val discoverableIntent: Intent =
-            Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
-                putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+
+    fun initObserver() {
+        mManager?.mSearchLiveData?.observe(
+            this
+        ) { value ->
+            when (value.loadingStatus) {
+                Resource.NEXT -> {
+                    adapter?.notifyItemInserted(value.data)
+                }
+                Resource.SUCCESS -> toast("扫描完成")
             }
-        startActivity(discoverableIntent)
+        }
+        mManager?.mBondLiveData?.observe(this) { value ->
+            when (value.loadingStatus) {
+                Resource.LOADING -> toast("配对中")
+                Resource.SUCCESS -> toast("配对成功")
+                Resource.ERROR -> toast("配对失败")
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
-    override fun onDeviceItemClick(device: BluetoothDeviceInfo) {
-        val remoteDevice = btAdapter.getRemoteDevice(device.address)
+    override fun onDeviceItemClick(address: String) {
+        val remoteDevice = btAdapter.getRemoteDevice(address)
         if (remoteDevice.bondState == BOND_BONDED) {
             Log.d(
                 "MyBluetoothManager",
@@ -73,7 +75,7 @@ class FindBluetoothActivity : AppCompatActivity(),
             finish()
             return
         }
-        manager.makePair(device.address, bondListener)
+        mManager?.makePair(address)
     }
 
 
@@ -108,6 +110,6 @@ class FindBluetoothActivity : AppCompatActivity(),
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(manager.mReceiver)
+        unregisterReceiver(mManager?.mReceiver)
     }
 }

@@ -1,5 +1,7 @@
 package com.example.blueteethtest
 
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
@@ -12,36 +14,36 @@ class BluetoothDeviceAdapter(
     private val context: Context
 ) : RecyclerView.Adapter<BluetoothDeviceAdapter.DeviceViewHolder>() {
 
-    var deviceList = ArrayList<BluetoothDeviceInfo>()
+    var deviceList = ArrayList<BluetoothDevice>()
     var onItemClickListener: OnDeviceItemClickListener? = null
 
     override fun getItemCount(): Int {
         return deviceList.size
     }
 
-    fun refreshData(accountList: ArrayList<BluetoothDeviceInfo>) {
+    fun refreshData(accountList: ArrayList<BluetoothDevice>) {
         this.deviceList.clear()
         this.deviceList.addAll(accountList)
         notifyDataSetChanged()
     }
 
-    class DeviceViewHolder : RecyclerView.ViewHolder {
-        var root: View? = null
+    class DeviceViewHolder(view: View) : RecyclerView.ViewHolder(view) {
+        var root: View? = view
         var name: TextView? = null
 
 
-        constructor(view: View) : super(view) {
-            root = view
+        init {
             name = view.findViewById(R.id.tv_name)
         }
     }
 
+    @SuppressLint("MissingPermission")
     override fun onBindViewHolder(holder: DeviceViewHolder, position: Int) {
-        var device = deviceList[position]
+        val device = deviceList[position]
         holder.name?.text =
-            if (device.name == null) "未知设备 ${device.address}" else "${device.name}   ${device.address}"
-        holder?.root?.setOnClickListener {
-            onItemClickListener?.onDeviceItemClick(device)
+            if (device.name == null) "未知设备 ${device?.address}" else "${device.name}   ${device.address}"
+        holder.root?.setOnClickListener {
+            onItemClickListener?.onDeviceItemClick(device!!.address)
         }
     }
 
@@ -53,6 +55,6 @@ class BluetoothDeviceAdapter(
     }
 
     interface OnDeviceItemClickListener {
-        fun onDeviceItemClick(device: BluetoothDeviceInfo)
+        fun onDeviceItemClick(s: String)
     }
 }

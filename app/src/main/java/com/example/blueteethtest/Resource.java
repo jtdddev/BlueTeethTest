@@ -2,10 +2,6 @@ package com.example.blueteethtest;
 
 import java.util.Objects;
 
-/**
- * Created by XiongShaoWu
- * on 2020/7/7
- */
 public class Resource<T> {
     public static final int LOADING = 1;
     public static final int NEXT = 2;
